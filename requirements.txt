@@ -1,5 +1,0 @@
-tensorflow
-jaxlib
-jax
-matplotlib
-numpy
