@@ -1,33 +1,25 @@
-[tool.black]
-line-length = 150
-
-[build-system]
-requires = ["poetry-core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"
-
-[tool.poetry]
+[project]
 name = "gait_transformer"
 version = "0.0.1"
 description = "Gait Transformer"
-authors = ["James Cotton <peabody124@gmail.com>"]
-license = "MIT"
 readme = "README.md"
-homepage = "https://github.com/peabody124/GaitTransformer"
-keywords = ["gait", "transformer", "biomechanics"]
-classifiers = [
-    "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
+requires-python = "~=3.11"
+dependencies = [
+    "tensorflow>=2.18.0",
+    "keras>=3.7.0",
+    "jaxlib",
+    "jax",
+    "matplotlib",
+    "numpy",
 ]
-python = ">=3.10"
 
-[tool.poetry.dependencies]
-tensorflow = "*"
-jax = "*"
-numpy = "*"
 
-[tool.poetry.urls]
-homepage = "https://github.com/peabody124/GaitTransformer"
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
-[tool.poetry.package.include]
-gait_transformer = ["assets/model_v0.2.h5"]
+[tool.uv]
+find-links = ["https://storage.googleapis.com/jax-releases/jax_cuda_releases.html"]
+
+[tool.black]
+line-length = 150
