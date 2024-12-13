@@ -7,7 +7,7 @@ from pose_pipeline import *
 from gait_analysis.fetch_training_dataset import get_trials, get_dataset, field_types
 from gait_analysis.gait_decoder_training import ModelTraining, ModelTrainingParam
 
-## The code below duplicates code from sensor_fusion.gait_dj
+## The code below duplicates code from portable_biomechanics_sessions.gait_dj
 
 gait_schema = dj.schema("gait_transformer_training")
 
@@ -39,7 +39,7 @@ class GaitPhaseStrideTransformer(dj.Computed):
 
         # for projects using the emgimu schema we manually can add these entries for
         # subjects
-        from sensor_fusion.emgimu_session import Height, FirebaseSession, DualRecording
+        from portable_biomechanics_sessions.emgimu_session import Height, FirebaseSession, DualRecording
 
         if len(FirebaseSession.AppVideo & key) > 0:
             height = (Height & (FirebaseSession.AppVideo & key)).fetch1("height_mm")
