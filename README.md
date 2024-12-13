@@ -6,8 +6,9 @@ This is code to run the Gait Transformer described in:
 
 ## Installation
 
-    pip install -r requirements.txt
     pip install -e .
+
+For further information, refer [here](https://gist.github.com/peifferjd/0afc6484a99cf968cde16edb26752901).
 
 ## Usage
 
