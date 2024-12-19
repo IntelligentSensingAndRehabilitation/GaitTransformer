@@ -4,8 +4,8 @@ import numpy as np
 import pose_pipeline
 from pose_pipeline import *
 
-from gait_analysis.fetch_training_dataset import get_trials, get_dataset, field_types
-from gait_analysis.gait_decoder_training import ModelTraining, ModelTrainingParam
+from gait_lab_dataset.fetch_training_dataset import get_trials, get_dataset, field_types
+from gait_lab_dataset.gait_decoder_training import ModelTraining, ModelTrainingParam
 
 ## The code below duplicates code from portable_biomechanics_sessions.gait_dj
 
@@ -32,7 +32,7 @@ class GaitPhaseStrideTransformer(dj.Computed):
 
     def make(self, key):
 
-        from gait_analysis.gait_phase_transformer import gait_phase_stride_inference
+        from gait_lab_dataset.gait_phase_transformer import gait_phase_stride_inference
 
         regressor = (ModelTraining & key).get_model()
         keypoints3d = (LiftingPerson & key).fetch1("keypoints_3d")
@@ -72,7 +72,7 @@ class GaitPhaseStrideKalman(dj.Computed):
     """
 
     def make(self, key):
-        import gait_analysis.gait_phase_kalman
+        import gait_lab_dataset.gait_phase_kalman
 
         timestamps = (pose_pipeline.VideoInfo & key).fetch1("timestamps")
         timestamps = np.array([(t - timestamps[0]).total_seconds() for t in timestamps])
@@ -80,9 +80,9 @@ class GaitPhaseStrideKalman(dj.Computed):
         phase = (GaitPhaseStrideTransformer & key).fetch1("phase")
         phase = np.take(phase, [0, 4, 1, 5, 2, 6, 3, 7], axis=-1)
 
-        states, predictions, errors = gait_analysis.gait_phase_kalman.gait_kalman_smoother(phase)
-        kalman_phases = gait_analysis.gait_phase_kalman.compute_phases(states)
-        detected_events = gait_analysis.gait_phase_kalman.get_event_times(states, timestamps)
+        states, predictions, errors = gait_lab_dataset.gait_phase_kalman.gait_kalman_smoother(phase)
+        kalman_phases = gait_lab_dataset.gait_phase_kalman.compute_phases(states)
+        detected_events = gait_lab_dataset.gait_phase_kalman.get_event_times(states, timestamps)
 
         key["states"] = np.array(states)
         key["predictions"] = np.array(predictions)
@@ -196,8 +196,8 @@ class GaitPhaseWalking(dj.Computed):
         """
 
     def make(self, key):
-        from gait_analysis.fetch_training_dataset import get_dataset, mocap_keep
-        import gait_analysis.mocap_sync
+        from gait_lab_dataset.fetch_training_dataset import get_dataset, mocap_keep
+        import gait_lab_dataset.mocap_sync
 
         walking = detect_walking(key)
         walking.update(key)
@@ -229,8 +229,8 @@ class GaitPhaseWalking(dj.Computed):
             ss_right = 100 - avg_phase[1]
             dst = 100 - ss_left - ss_right
 
-            right_idx = fields.index("RTOE")  # gait_analysis.mocap_sync.default_coco_map['Right Ankle'])
-            left_idx = fields.index("LTOE")  # gait_analysis.mocap_sync.default_coco_map['Left Ankle'])
+            right_idx = fields.index("RTOE")  # gait_lab_dataset.mocap_sync.default_coco_map['Right Ankle'])
+            left_idx = fields.index("LTOE")  # gait_lab_dataset.mocap_sync.default_coco_map['Left Ankle'])
 
             print(len(timestamps), len(stride))
             if f[1] == len(timestamps):
@@ -294,7 +294,7 @@ class Steps(dj.Computed):
     def make(self, key):
 
         import scipy.signal
-        from gait_analysis.fetch_training_dataset import get_dataset, mocap_keep
+        from gait_lab_dataset.fetch_training_dataset import get_dataset, mocap_keep
 
         dt = 1.0 / (pose_pipeline.VideoInfo & key).fetch1("fps")
         timestamps = (pose_pipeline.VideoInfo & key).fetch_timestamps()
