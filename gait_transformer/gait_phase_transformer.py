@@ -128,8 +128,10 @@ class EncoderTransformerLayer(layers.Layer):
         return config
 
 
-def get_pos_encoding(positions, depth, min_rate=1.0 / 10000.0, dtype=None):
+def get_pos_encoding(positions, depth, min_rate=1.0 / 10000.0, dtype=None, pos_divider=None):
     positions = tf.cast(positions, dtype=dtype)
+    if pos_divider is not None:
+        positions = positions / pos_divider
     angle_rate_exponents = tf.cast(tf.linspace(0, 1, depth // 2), dtype=dtype)
     angle_rates = min_rate ** (angle_rate_exponents)
     angle_rads = tf.expand_dims(positions, 1) * tf.expand_dims(angle_rates, axis=0)
@@ -139,9 +141,9 @@ def get_pos_encoding(positions, depth, min_rate=1.0 / 10000.0, dtype=None):
     return pos_encoding
 
 
-def get_pos_encoding_matrix(num_positions, depth, min_rate=1.0 / 10000.0, dtype=tf.float32):
+def get_pos_encoding_matrix(num_positions, depth, min_rate=1.0 / 10000.0, dtype=tf.float32, pos_divider=None):
     positions = tf.range(num_positions)
-    return get_pos_encoding(positions, depth, min_rate, dtype)
+    return get_pos_encoding(positions, depth, min_rate, dtype, pos_divider)
 
 
 # loosely based on https://keras.io/examples/vision/image_classification_with_vision_transformer/
@@ -149,16 +151,17 @@ def get_pos_encoding_matrix(num_positions, depth, min_rate=1.0 / 10000.0, dtype=
 
 
 class PositionalEncodingLayer(layers.Layer):
-    def __init__(self, min_rate=1.0 / 10000.0, **kwargs):
+    def __init__(self, min_rate=1.0 / 10000.0, pos_divider=None, **kwargs):
         super(PositionalEncodingLayer, self).__init__(**kwargs)
         self.min_rate = min_rate
+        self.pos_divider = pos_divider
 
     def call(self, inputs):
         positions = inputs.shape[1]
         positions = tf.range(positions)
 
         depth = inputs.shape[2]
-        return tf.expand_dims(get_pos_encoding(positions, depth, self.min_rate, dtype=inputs.dtype), axis=0)
+        return tf.expand_dims(get_pos_encoding(positions, depth, self.min_rate, dtype=inputs.dtype, pos_divider=self.pos_divider), axis=0)
 
     def compute_output_shape(self, input_shape):
         return input_shape
@@ -177,6 +180,7 @@ def get_gait_phase_transformer(
     shared=True,
     repeat_positional=True,
     mlp_head_units=[256, 256],  # Size of the dense layers of the final classifier
+    pos_divider=None,
 ):
 
     input_shape = dataset.element_spec[0].shape
@@ -193,7 +197,7 @@ def get_gait_phase_transformer(
     encoded_poses = layers.Dense(units=projection_dim, name="embedding")(flat_inputs)
 
     positional_encoding = tf.expand_dims(
-        get_pos_encoding_matrix(tf.shape(inputs)[1], projection_dim, dtype=encoded_poses.dtype),
+        get_pos_encoding_matrix(tf.shape(inputs)[1], projection_dim, dtype=encoded_poses.dtype, pos_divider=pos_divider),
         axis=0,
     )
 
@@ -245,6 +249,7 @@ def get_gait_phase_stride_transformer(
     physics_consistency_loss=0.0,
     foot_vel_loss=False,
     mlp_head_units=[256, 256],  # Size of the dense layers of the final classifier
+    pos_divider=None,
 ):
 
     if dataset is None:
@@ -337,7 +342,7 @@ def get_gait_phase_stride_transformer(
     encoded_poses = layers.Dense(units=projection_dim, name="embedding")(flat_inputs)
 
     # and create the positional encoding for these inputs
-    positional_encoding = PositionalEncodingLayer()(encoded_poses)
+    positional_encoding = PositionalEncodingLayer(pos_divider=pos_divider)(encoded_poses)
 
     # create the position encoding that combines both the demographics and for the poses
     positional_encoding = layers.Lambda(lambda x: tf.concat([demographics_encoding, x], axis=1))(positional_encoding)
@@ -466,7 +471,22 @@ def gait_phase_stride_inference(keypoints3d, height, regressor, L, batch_size=12
     return phases, stride
 
 
-def load_default_model():
+def load_default_model(pos_divider=None):
+    """
+    Load the default gait transformer model
+
+    The gait transformer was trained on data acquired at 30 Hz. However, it can be applied
+    to different sampling rates. This is done by altering the sample number passed into the
+    positional encoder. So for example, if the data is at 60 Hz, using a pos_divider of 2
+    will correct for this.
+
+    Note that the default window_len should typically be increased proportionally in the inference
+    algorithm. So for example, the default window_len is 90 and if the data is at 60 Hz, the window_len
+    should be increased to 180.
+
+    Args:
+        pos_divider: a number to divide the native positional embedding
+    """
 
     # default model is in the assets directory below this file
     import os
@@ -493,7 +513,7 @@ def load_default_model():
         "kp_dim": 17,
     }
 
-    transformer_model = get_gait_phase_stride_transformer(**model_params)
+    transformer_model = get_gait_phase_stride_transformer(**model_params, pos_divider=pos_divider)
 
     transformer_model.load_weights(model_file)
 
