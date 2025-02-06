@@ -264,7 +264,6 @@ def get_gait_phase_stride_transformer(
     else:
         dataset_sig = dataset.element_spec
 
-    print(dataset_sig)
     input_shape = dataset_sig[0][0].shape
     T = input_shape[1]  # sequence length
     num_joints = input_shape[2]
@@ -310,8 +309,6 @@ def get_gait_phase_stride_transformer(
         mid_hip = (kp[:, :, right_hip_idx, :] + kp[:, :, left_hip_idx, :]) / 2
 
         x = x - mid_hip[:, :, None, :]
-    else:
-        print("No derotate")
 
     if kp_idx_keep is not None:
         kp = x
