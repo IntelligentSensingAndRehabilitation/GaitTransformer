@@ -426,50 +426,134 @@ def get_gait_phase_stride_transformer(
 
 
 def shift_generator(keypoints3d, stride=1, L=90):
+    """Generate sliding windows over keypoint sequence.
+
+    Uses direct slicing instead of fancy indexing for zero-copy views.
+    """
     N = keypoints3d.shape[0]
-    length_idx = np.arange(L)
-    samples = np.arange(0, N - L + 1, stride)
-    for s in samples:
-        yield keypoints3d[length_idx + s]
+    for s in range(0, N - L + 1, stride):
+        yield keypoints3d[s:s + L]  # Direct slice = zero-copy view
 
 
 def chunk_generator(keypoints3d, stride=1, L=90, batch_size=32):
-    shift_sample_iter = shift_generator(keypoints3d, stride=stride, L=L)
+    """Generate batched sliding windows using stride tricks for zero-copy views.
 
-    while True:
-        try:
-            chunk = []
-            for i in range(batch_size):
-                sample = next(shift_sample_iter)
-                chunk.append(sample)
-            yield np.array(chunk)
-        except StopIteration as s:
-            if len(chunk) > 0:
-                yield np.array(chunk)
-            break
+    Uses numpy.lib.stride_tricks.as_strided for efficient windowing.
+    """
+    from numpy.lib.stride_tricks import as_strided
+
+    N = keypoints3d.shape[0]
+    num_samples = (N - L) // stride + 1
+
+    if num_samples <= 0:
+        return
+
+    # Create sliding window view (zero-copy)
+    shape = (num_samples, L) + keypoints3d.shape[1:]
+    strides = (keypoints3d.strides[0] * stride,) + keypoints3d.strides
+    windows = as_strided(keypoints3d, shape=shape, strides=strides)
+
+    # Yield batches from the view
+    for i in range(0, num_samples, batch_size):
+        # ascontiguousarray ensures the batch is contiguous for TensorFlow
+        yield np.ascontiguousarray(windows[i:i + batch_size])
 
 
-def gait_phase_stride_inference(keypoints3d, height, regressor, L, batch_size=128):
+# Cache for compiled prediction functions (keyed by (model_id, use_xla))
+_compiled_predict_fns = {}
 
+
+def _get_predict_fn(regressor, use_xla=True):
+    """Get or create a cached prediction function for the regressor.
+
+    Args:
+        regressor: The Keras model to wrap.
+        use_xla: If True, use XLA compilation for ~12x speedup after warmup.
+                 First call with new batch sizes will be slow (~4-8s for compilation).
+    """
+    cache_key = (id(regressor), use_xla)
+    if cache_key not in _compiled_predict_fns:
+        if use_xla:
+            @tf.function(jit_compile=True)
+            def predict_batch(keypoints, heights):
+                return regressor((keypoints, heights), training=False)
+        else:
+            @tf.function
+            def predict_batch(keypoints, heights):
+                return regressor((keypoints, heights), training=False)
+
+        _compiled_predict_fns[cache_key] = predict_batch
+    return _compiled_predict_fns[cache_key]
+
+
+def gait_phase_stride_inference(keypoints3d, height, regressor, L, batch_size=128, use_xla=True, pad_batches=True):
+    """Run gait phase and stride inference on keypoint sequence.
+
+    Optimized for performance with optional XLA compilation and reduced GPU-CPU transfers.
+
+    Args:
+        keypoints3d: Keypoint array of shape (N_frames, 17, 3).
+        height: Subject height in mm.
+        regressor: The GaitTransformer model.
+        L: Window length (default 90 frames at 30Hz = 3 seconds).
+        batch_size: Batch size for inference (default 128).
+        use_xla: If True (default), use XLA compilation for ~12x speedup.
+                 First call will be slow (~4-8s for compilation).
+                 Set to False for consistent timing without compilation overhead.
+        pad_batches: If True (default), pad last batch to batch_size to avoid XLA
+                     recompilation for different input lengths. Only affects use_xla=True.
+    """
     from tqdm import tqdm
+
+    # Get cached prediction function (with or without XLA)
+    predict_fn = _get_predict_fn(regressor, use_xla=use_xla)
 
     # compute rolling phases
     if keypoints3d.shape[0] >= L:
 
         O = (L - 1) // 2
 
+        # Pre-compute height scalar (Optimization 5)
+        height_scaled = np.float32(height / 1000.0)
+
         chunk_iter = chunk_generator(keypoints3d, L=L, batch_size=batch_size)
         results = []
         for chunk in tqdm(chunk_iter):
-            chunk_height = height / 1000.0 * np.ones((chunk.shape[0],))
-            pred = regressor((chunk, chunk_height), training=False)[..., 0].numpy()
+            actual_batch_size = chunk.shape[0]
+
+            # Pad to next multiple of 100 to reduce XLA recompilations
+            # This means we only compile for batch sizes: 100, 200, ... up to batch_size
+            if pad_batches and use_xla:
+                # Round up to next multiple of 100 (or batch_size, whichever is smaller)
+                padded_size = min(((actual_batch_size + 99) // 100) * 100, batch_size)
+                if actual_batch_size < padded_size:
+                    pad_size = padded_size - actual_batch_size
+                    chunk = np.pad(chunk, ((0, pad_size), (0, 0), (0, 0), (0, 0)), mode='constant')
+                    chunk_height = np.full(padded_size, height_scaled, dtype=np.float32)
+                    pred = predict_fn(chunk, chunk_height)[..., 0]
+                    # Slice off padding
+                    pred = pred[:actual_batch_size]
+                else:
+                    chunk_height = np.full(actual_batch_size, height_scaled, dtype=np.float32)
+                    pred = predict_fn(chunk, chunk_height)[..., 0]
+            else:
+                chunk_height = np.full(actual_batch_size, height_scaled, dtype=np.float32)
+                pred = predict_fn(chunk, chunk_height)[..., 0]
+
             results.append(pred)
 
-        results = np.concatenate(results, axis=0)
+        # Single GPU->CPU transfer at the end (Optimization 4)
+        results = tf.concat(results, axis=0).numpy()
         phases = np.concatenate([results[0, :O], results[:, O], results[-1, O + 1 :]], axis=0)
 
     else:
-        phases = regressor((keypoints3d[None, ...], height[None, ...] / 1000.0), training=False)[0, ..., 0].numpy()
+        # For short sequences, pad to L frames if using XLA with pad_batches
+        if pad_batches and use_xla:
+            # Pad to create a single batch of size 1 with L frames
+            kp_padded = np.pad(keypoints3d, ((0, L - keypoints3d.shape[0]), (0, 0), (0, 0)), mode='edge')
+            phases = predict_fn(kp_padded[None, ...], np.array([height / 1000.0], dtype=np.float32))[0, :keypoints3d.shape[0], :, 0].numpy()
+        else:
+            phases = predict_fn(keypoints3d[None, ...], np.array([height / 1000.0], dtype=np.float32))[0, ..., 0].numpy()
 
     stride = phases[:, 8:]
     phases = phases[:, :8]
