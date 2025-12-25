@@ -330,12 +330,21 @@ def get_gait_phase_stride_transformer(
     encoded_demographics = layers.Dense(units=projection_dim, name="demographics_embedding")(flat_demographics)
 
     # and create a corresponding encoding layer
-    demographics_encoding = tf.reshape(layers.Embedding(1, projection_dim)(tf.range(10)), [10, projection_dim])
+    # Use valid index (0) and tile for Keras 3 compatibility
+    # (Keras 3 is strict about out-of-bounds embedding indices)
+    single_embedding = layers.Embedding(1, projection_dim)(tf.constant([0]))  # Shape: (1, projection_dim)
+    demographics_encoding = tf.tile(single_embedding, [10, 1])  # Shape: (10, projection_dim)
     demographics_encoding = tf.expand_dims(demographics_encoding, axis=0)
 
     # concatenate joints into 1 dimension and then project into the embedding dimension. this produces a
     # None x None x 128 tensor where the first two dimensions are batch and time.
-    flat_inputs = layers.Reshape((None, num_joints * joint_dim))(x)
+    # Use Lambda + tf.reshape instead of Reshape layer for Keras 3 compatibility
+    # (Keras 3's Reshape fails with None in target shape due to math.prod validation)
+    target_dim = num_joints * joint_dim
+    flat_inputs = layers.Lambda(
+        lambda t: tf.reshape(t, [tf.shape(t)[0], tf.shape(t)[1], target_dim]),
+        name='flatten_joints'
+    )(x)
     encoded_poses = layers.Dense(units=projection_dim, name="embedding")(flat_inputs)
 
     # and create the positional encoding for these inputs
