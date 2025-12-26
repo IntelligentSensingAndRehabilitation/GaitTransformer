@@ -208,6 +208,38 @@ class TestXLACompilation:
         # Should complete in under 2 seconds (no XLA compilation which takes 4-8s)
         assert first_time < 2.0, f"use_xla=False should not have XLA overhead: {first_time:.2f}s"
 
+    def test_multiple_model_loads_share_cache(self, test_data):
+        """Verify that multiple load_default_model() calls share XLA cache."""
+        from gait_transformer.gait_phase_transformer import (
+            load_default_model,
+            gait_phase_stride_inference,
+            _compiled_predict_fns,
+        )
+
+        height = test_data["height"]
+        keypoints = test_data["small"]
+
+        # Clear cache
+        _compiled_predict_fns.clear()
+
+        # Load first model and compile
+        model1 = load_default_model()
+        start = time.time()
+        _ = gait_phase_stride_inference(keypoints, height, model1, L=90, use_xla=True)
+        time1 = time.time() - start
+        assert time1 > 1.0, f"Expected XLA compilation: {time1:.2f}s"
+
+        # Load second model - should reuse cached XLA function (no recompile)
+        model2 = load_default_model()
+        assert id(model1) != id(model2), "Models should be different instances"
+
+        start = time.time()
+        _ = gait_phase_stride_inference(keypoints, height, model2, L=90, use_xla=True)
+        time2 = time.time() - start
+
+        # Second model should be fast (cache hit based on model.name, not id)
+        assert time2 < 1.0, f"Expected cache hit for second model: {time2:.2f}s (should share cache)"
+
 
 def run_quick_benchmark():
     """Run a quick benchmark without pytest-benchmark."""

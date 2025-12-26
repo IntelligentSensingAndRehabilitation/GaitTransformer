@@ -459,19 +459,24 @@ def chunk_generator(keypoints3d, stride=1, L=90, batch_size=32):
         yield np.ascontiguousarray(windows[i:i + batch_size])
 
 
-# Cache for compiled prediction functions (keyed by (model_id, use_xla))
+# Cache for compiled prediction functions (keyed by (model_name, use_xla))
+# Using model.name instead of id(model) allows cache sharing across load_default_model() calls
 _compiled_predict_fns = {}
 
 
 def _get_predict_fn(regressor, use_xla=True):
     """Get or create a cached prediction function for the regressor.
 
+    The cache is keyed by model.name (not id), so multiple calls to load_default_model()
+    will share the same compiled XLA function, avoiding repeated compilation.
+
     Args:
         regressor: The Keras model to wrap.
         use_xla: If True, use XLA compilation for ~12x speedup after warmup.
                  First call with new batch sizes will be slow (~4-8s for compilation).
     """
-    cache_key = (id(regressor), use_xla)
+    # Use model.name as cache key so different model instances share compiled functions
+    cache_key = (regressor.name, use_xla)
     if cache_key not in _compiled_predict_fns:
         if use_xla:
             @tf.function(jit_compile=True)
