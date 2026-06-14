@@ -105,7 +105,7 @@ def draw_keypoints(
     return image
 
 
-def get_trace_overlay_fn(phases, stride, walking_prob=None):
+def get_trace_overlay_fn(phases, stride, walking_prob=None, trace_window=50):
 
     phases = np.reshape(phases, [-1, 4, 2])[:, :, 0]
     # phases = np.arctan2(phases[:, :, 1], phases[:, :, 0])
@@ -132,10 +132,10 @@ def get_trace_overlay_fn(phases, stride, walking_prob=None):
         def scale_x(x):
             return int(x * (width / 1080))
 
-        if idx > 50 and idx < len(phases) - 50:
-            x = np.linspace(scale_x(750), scale_x(1050), 100)
+        if idx > trace_window and idx < len(phases) - trace_window:
+            x = np.linspace(scale_x(750), scale_x(1050), trace_window * 2)
 
-            idx_range = np.array(range(idx - 50, idx + 50))
+            idx_range = np.array(range(idx - trace_window, idx + trace_window))
 
             # foot pos
             y = scale_y(100, 1300) - stride[idx_range, 0] * scale_y(100, 1300)
@@ -204,7 +204,7 @@ def get_trace_overlay_fn(phases, stride, walking_prob=None):
     return plot_traces
 
 
-def make_overlay(video: str, phases: np.array, stride: np.array, keypoints: np.array, outname=None):
+def make_overlay(video: str, phases: np.array, stride: np.array, keypoints: np.array, outname=None, trace_window=50):
     """
     Make a gait transformer overlay video
 
@@ -214,12 +214,13 @@ def make_overlay(video: str, phases: np.array, stride: np.array, keypoints: np.a
         stride: stride features
         keypoints: keypoints (time x 17 x 3)
         outname: output file name (optional, otherwise returns temp file)
+        trace_window: number of frames on each side of the current frame to show in the trace (default 50)
     """
 
     import tempfile
     import os
 
-    plot_traces = get_trace_overlay_fn(phases, stride)
+    plot_traces = get_trace_overlay_fn(phases, stride, trace_window=trace_window)
 
     phases = np.reshape(phases, [-1, 4, 2])
     phases = np.arctan2(phases[:, :, 1], phases[:, :, 0])
