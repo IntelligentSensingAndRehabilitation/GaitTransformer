@@ -5,6 +5,7 @@ from tqdm import tqdm
 import cv2
 import numpy as np
 from tqdm import tqdm
+from datetime import datetime
 
 
 def video_reader(filename: str, batch_size: int = 8, width: int | None = None):
