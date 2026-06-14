@@ -82,3 +82,36 @@ def video_reader(filename: str, batch_size: int = 8, width: int | None = None):
 
                 frames = []
                 
+def get_dt_from_filename(filename: str) -> datetime | None:
+    """
+    Attempt to extract a datetime object from a video filename.
+    Supports common formats like 'VID_20231027_153022.mp4'.
+    Falls back to file modification time if no date is found in the name.
+    """
+    basename = os.path.basename(filename)
+    
+    # Look for YYYYMMDD_HHMMSS pattern (common in Android/some cameras)
+    match = re.search(r'(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})', basename)
+    if match:
+        try:
+            return datetime.strptime(match.group(), "%Y%m%d_%H%M%S")
+        except ValueError:
+            pass
+            
+    # Look for YYYY-MM-DD_HH-MM-SS or similar patterns
+    match = re.search(r'(\d{4})-(\d{2})-(\d{2})[_-](\d{2})[-:](\d{2})[-:](\d{2})', basename)
+    if match:
+        # Reconstruct to standard format for easy parsing
+        dt_str = "".join(match.groups())
+        try:
+            return datetime.strptime(dt_str, "%Y%m%d%H%M%S")
+        except ValueError:
+            pass
+
+    # Fallback to filesystem metadata
+    if os.path.exists(filename):
+        # Modification time is usually the most reliable fallback for "when it was taken"
+        timestamp = os.path.getmtime(filename) 
+        return datetime.fromtimestamp(timestamp)
+        
+    return None
