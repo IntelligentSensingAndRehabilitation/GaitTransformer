@@ -82,38 +82,36 @@ def video_reader(filename: str, batch_size: int = 8, width: int | None = None):
 
                 frames = []
                 
-def get_dt_from_filename(filename: str) -> float | None:
+def get_dt_from_filename(filename: str) -> float:
     """
-    Attempt to extract a timestamp from a video filename, returned as a float
+    Extract a timestamp from a video filename, returned as a float
     (seconds since the Unix epoch) so that callers can compute time deltas directly.
     Supports common formats like 'VID_20231027_153022.mp4'.
     Falls back to file modification time if no date is found in the name.
+
+    Raises:
+        ValueError: If no date pattern is found in the filename and the file does not exist.
     """
     basename = os.path.basename(filename)
-    
+
     # Look for YYYYMMDD_HHMMSS pattern (common in Android/some cameras)
     match = re.search(r'(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})', basename)
     if match:
-        try:
-            dt = datetime.strptime(match.group(), "%Y%m%d_%H%M%S")
-            return dt.replace(tzinfo=timezone.utc).timestamp()
-        except ValueError:
-            pass
-            
+        dt = datetime.strptime(match.group(), "%Y%m%d_%H%M%S")
+        return dt.replace(tzinfo=timezone.utc).timestamp()
+
     # Look for YYYY-MM-DD_HH-MM-SS or similar patterns
     match = re.search(r'(\d{4})-(\d{2})-(\d{2})[_-](\d{2})[-:](\d{2})[-:](\d{2})', basename)
     if match:
-        # Reconstruct to standard format for easy parsing
         dt_str = "".join(match.groups())
-        try:
-            dt = datetime.strptime(dt_str, "%Y%m%d%H%M%S")
-            return dt.replace(tzinfo=timezone.utc).timestamp()
-        except ValueError:
-            pass
+        dt = datetime.strptime(dt_str, "%Y%m%d%H%M%S")
+        return dt.replace(tzinfo=timezone.utc).timestamp()
 
     # Fallback to filesystem metadata
     if os.path.exists(filename):
-        # Modification time is usually the most reliable fallback for "when it was taken"
         return os.path.getmtime(filename)
-        
-    return None
+
+    raise ValueError(
+        f"Could not extract a timestamp from filename {filename!r}: "
+        "no recognised date pattern found and file does not exist."
+    )
