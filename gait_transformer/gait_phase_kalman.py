@@ -89,7 +89,7 @@ def gait_kalman_smoother(phases, dt=1.0 / 30.0, smoothing=True):
         return jnp.array([x[0], relu(x[1]), *x[2:]])
 
     @jit
-    def forward_update(carry, phase, dt=1.0 / 30.0):
+    def forward_update(carry, phase, dt=dt):
         x, P = carry
         x, P = predict(x, P, dt)  # , Q=Q)
         x = constrain(x)

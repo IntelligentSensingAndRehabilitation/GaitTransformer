@@ -3,7 +3,6 @@ name = "gait_transformer"
 version = "0.0.1"
 description = "Gait Transformer"
 readme = "README.md"
-requires-python = "~=3.11"
 dependencies = [
     "tensorflow>=2.18.0",
     "keras>=3.7.0",
