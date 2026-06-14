@@ -1,7 +1,3 @@
-import os
-import re
-from datetime import datetime, timezone
-
 import cv2
 import numpy as np
 from tqdm import tqdm
@@ -84,34 +80,22 @@ def video_reader(filename: str, batch_size: int = 8, width: int | None = None):
                 
 def get_dt_from_filename(filename: str) -> float:
     """
-    Extract a timestamp from a video filename, returned as a float
-    (seconds since the Unix epoch) so that callers can compute time deltas directly.
-    Supports common formats like 'VID_20231027_153022.mp4'.
-    Falls back to file modification time if no date is found in the name.
+    Return the frame time step dt (in seconds) for a video file, i.e. 1/fps.
+
+    Args:
+        filename: path to the video file.
+
+    Returns:
+        dt as a float in seconds (e.g. ~0.0333 for a 30 Hz video).
 
     Raises:
-        ValueError: If no date pattern is found in the filename and the file does not exist.
+        ValueError: If the file cannot be opened or its frame rate cannot be read.
     """
-    basename = os.path.basename(filename)
-
-    # Look for YYYYMMDD_HHMMSS pattern (common in Android/some cameras)
-    match = re.search(r'(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})', basename)
-    if match:
-        dt = datetime.strptime(match.group(), "%Y%m%d_%H%M%S")
-        return dt.replace(tzinfo=timezone.utc).timestamp()
-
-    # Look for YYYY-MM-DD_HH-MM-SS or similar patterns
-    match = re.search(r'(\d{4})-(\d{2})-(\d{2})[_-](\d{2})[-:](\d{2})[-:](\d{2})', basename)
-    if match:
-        dt_str = "".join(match.groups())
-        dt = datetime.strptime(dt_str, "%Y%m%d%H%M%S")
-        return dt.replace(tzinfo=timezone.utc).timestamp()
-
-    # Fallback to filesystem metadata
-    if os.path.exists(filename):
-        return os.path.getmtime(filename)
-
-    raise ValueError(
-        f"Could not extract a timestamp from filename {filename!r}: "
-        "no recognised date pattern found and file does not exist."
-    )
+    cap = cv2.VideoCapture(filename)
+    if not cap.isOpened():
+        raise ValueError(f"Could not open video file {filename!r}.")
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    cap.release()
+    if fps <= 0:
+        raise ValueError(f"Could not read a valid frame rate from {filename!r} (got {fps}).")
+    return 1.0 / fps
